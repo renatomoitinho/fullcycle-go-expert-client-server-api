@@ -4,16 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 	"log"
 	"net/http"
 	"time"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 const (
-	QuotationSaveTimeout = 10 * time.Millisecond
-	QuotationLoadTimeout = 200 * time.Millisecond
+	quotationSaveTimeout = 10 * time.Millisecond
+	quotationLoadTimeout = 200 * time.Millisecond
 )
 
 type quotation struct {
@@ -33,33 +34,40 @@ type quotation struct {
 
 type quotationServer struct {
 	db          *gorm.DB
-	SaveTimeout time.Duration
-	LoadTimeout time.Duration
+	saveTimeout time.Duration
+	loadTimeout time.Duration
 }
 
 func newQuotationServer(db *gorm.DB) *quotationServer {
 	return &quotationServer{
 		db:          db,
-		SaveTimeout: QuotationSaveTimeout,
-		LoadTimeout: QuotationLoadTimeout,
+		saveTimeout: quotationSaveTimeout,
+		loadTimeout: quotationLoadTimeout,
 	}
 }
 
-func (q *quotationServer) save(ctx context.Context, quotation *quotation) error {
-	timeout, cancel := context.WithTimeout(ctx, q.SaveTimeout)
+func (q *quotationServer) save(ctx context.Context, quotation *quotation) (err error) {
+	timeout, cancel := context.WithTimeout(ctx, q.saveTimeout)
 	defer cancel()
-	return q.db.WithContext(timeout).Create(quotation).Error
+	err = q.db.WithContext(timeout).Create(quotation).Error
+	if err != nil {
+		log.Println("error in save quotation: ", err.Error())
+		return err
+	}
+	return nil
 }
 
 func (q *quotationServer) loadFromApi(ctx context.Context) (*quotation, error) {
-	timeout, cancel := context.WithTimeout(ctx, q.LoadTimeout)
+	timeout, cancel := context.WithTimeout(ctx, q.loadTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(timeout, http.MethodGet, "https://economia.awesomeapi.com.br/json/last/USD-BRL", nil)
 	if err != nil {
+		log.Println("error in loadFromApi: ", err.Error())
 		return nil, err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		log.Println("error in loadFromApi: ", err.Error())
 		return nil, err
 	}
 	defer func() {
@@ -78,7 +86,19 @@ func (q *quotationServer) loadFromApi(ctx context.Context) (*quotation, error) {
 
 func (q *quotationServer) writeError(w http.ResponseWriter, err error) {
 	w.WriteHeader(http.StatusInternalServerError)
-	_, _ = w.Write([]byte(err.Error()))
+	w.Header().Set("Content-Type", "application/json")
+	body := map[string]any{"status": http.StatusInternalServerError, "error": err.Error()}
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func (q *quotationServer) writeOK(w http.ResponseWriter, model any) {
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	err := json.NewEncoder(w).Encode(model)
+	if err != nil {
+		q.writeError(w, err)
+		return
+	}
 }
 
 func (q *quotationServer) httpHandler(w http.ResponseWriter, r *http.Request) {
@@ -92,13 +112,7 @@ func (q *quotationServer) httpHandler(w http.ResponseWriter, r *http.Request) {
 		q.writeError(w, err)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-	err = json.NewEncoder(w).Encode(model)
-	if err != nil {
-		q.writeError(w, err)
-		return
-	}
+	q.writeOK(w, model)
 }
 
 func (q *quotationServer) ListenAndServe() {

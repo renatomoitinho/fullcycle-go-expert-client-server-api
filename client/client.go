@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	apiReadTimeout = 300 * time.Millisecond
+	quotationLoadTimeout = 300 * time.Millisecond
 )
 
 type quotation struct {
@@ -26,19 +26,21 @@ type quotationClient struct {
 func newQuotationClient() *quotationClient {
 	return &quotationClient{
 		template:    template.Must(template.New("test").Parse("Dólar: {{.Bid}}\n")),
-		readTimeout: apiReadTimeout,
+		readTimeout: quotationLoadTimeout,
 	}
 }
 
 func (cli *quotationClient) loadFromApi(ctx context.Context, url string) (*quotation, error) {
-	timeout, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	timeout, cancel := context.WithTimeout(ctx, cli.readTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(timeout, http.MethodGet, url, nil)
 	if err != nil {
+		log.Println("error in loadFromApi: ", err.Error())
 		return nil, err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		log.Println("error in loadFromApi: ", err.Error())
 		return nil, err
 	}
 	defer func() {

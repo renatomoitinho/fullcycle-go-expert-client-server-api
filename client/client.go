@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -46,6 +48,12 @@ func (cli *quotationClient) loadFromApi(ctx context.Context, url string) (*quota
 	defer func() {
 		_ = resp.Body.Close()
 	}()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, errors.New("error in loadFromApi: " + string(b))
+	}
+
 	var q quotation
 	err = json.NewDecoder(resp.Body).Decode(&q)
 	if err != nil {

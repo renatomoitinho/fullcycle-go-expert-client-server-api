@@ -86,9 +86,8 @@ func (q *quotationServer) loadFromApi(ctx context.Context) (*quotation, error) {
 
 func (q *quotationServer) writeError(w http.ResponseWriter, err error) {
 	w.WriteHeader(http.StatusInternalServerError)
-	w.Header().Set("Content-Type", "application/json")
-	body := map[string]any{"status": http.StatusInternalServerError, "error": err.Error()}
-	_ = json.NewEncoder(w).Encode(body)
+	w.Header().Set("Content-Type", "text/plain")
+	w.Write([]byte(err.Error()))
 }
 
 func (q *quotationServer) writeOK(w http.ResponseWriter, model any) {
